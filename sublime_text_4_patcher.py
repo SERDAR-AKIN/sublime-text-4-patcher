@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 
-# Credits to leogx9r for most signatures and patching logic
+# Credits to leogx9r for patching logic
 # Script by rainbowpigeon
 
 
@@ -228,6 +228,20 @@ class File:
         return self.path
 
 
+class SublimeText(File):
+    def __init__(self, filepath: Union[str, Path]):
+        super().__init__(filepath)
+
+    def get_version(self):
+        it = re.finditer(b"version=(\d{4})", self.data, flags=re.DOTALL)
+        match = next(it, None)
+        if not match:
+            raise ValueError(f"Could not find version string")
+        if next(it, None):
+            raise ValueError(f"Found multiple matches for version string")
+        return match.group(1)
+
+
 class Ref:
     ADDR_LEN = 4
 
@@ -245,8 +259,9 @@ class Finder:
     ref_types = {
         r.type: r
         for r in (
-            Ref("call", 5),  # E8 | xx xx xx xx
-            Ref("lea", 7),  # LEA: 48 8D xx | xx xx xx xx
+            Ref("call", 5), # E8 | xx xx xx xx
+            Ref("lea", 7),  # 48 8D xx | xx xx xx xx
+            Ref("jmp", 5),  # E9 | xx xx xx xx
         )
     }
 
@@ -281,12 +296,8 @@ class Finder:
             rel_addr = self.get_addr(ref, matched_bytes)
             logger.debug("Found relative address: %s", hex(rel_addr))
 
-            if ref.type == "lea":
-                self.offset = self.off_to_rva(self.offset, ".text")
-                self.offset = self.offset + ref.total_size + rel_addr
-                self.offset = self.rva_to_off(self.offset, ".rdata")
-            else:
-                self.offset = self.offset + ref.total_size + rel_addr
+            # TODO: handle different sections using off_to_rva + rva_to_off
+            self.offset = self.offset + ref.total_size + rel_addr
 
             self.offset %= 2**32
 
@@ -367,8 +378,16 @@ class PatchDB:
             4165,
             4167,
             4168,
+            4170,
+            4171,
+            4172,
+            4173,
+            4174,
+            4175,
+            4177,
+            4178,
         ),
-        "stable": (4107, 4113, 4121, 4126, 4142, 4143, 4151, 4152, 4166, 4169),
+        "stable": (4107, 4113, 4121, 4126, 4142, 4143, 4151, 4152, 4166, 4169, 4180),
     }
 
     all_versions = tuple(itertools.chain.from_iterable(CHANNELS.values()))
@@ -416,24 +435,27 @@ class PatchDB:
             self.DB["windows"]["x64"]["base"] = (
                 Patch(
                     Sig(
-                        "4C 8D 4D ? E8 ? ? ? ? ? 8B ? ? ? ? ? 85 C0",
+                        "45 31 ? e8 ? ? ? ? 85 c0 75 ? ? 8d",
                         ref="call",
-                        offset=0x4,
-                        name="license_check_ref",
+                        offset=0x3,
+                        name="license_check",
                     ),
                     "ret0",
                 ),
                 Patch(
                     Sig(
-                        "55 56 57 48 83 EC 30 48 8D 6C 24 ? 48 C7 45 ? ? ? ? ? 89 D6 48 89 CF 6A 28",
+                        "8b 51 ? 48 83 c1 08 e9 ? ? ? ?",
+                        ref="jmp",
+                        offset=0x7,
                         name="server_validate",
                     ),
                     "ret1",
                 ),
                 Patch(
                     Sig(
-                        "55 56 57 48 81 EC ? 03 ? ? 48 8D AC 24 ? ? ? ?",
-                        name="license_notify",
+                        "48 8d ? ? ? ? ? e8 ? ? ? ? 48 89 c1 ff ? ? ? ? ? ? 8b",
+                        ref="lea",
+                        name="license_notification",
                     ),
                     "ret0",
                 ),
@@ -449,7 +471,7 @@ class PatchDB:
                     Sig(
                         "41 B8 88 13 00 00 E8 ? ? ? ?",
                         offset=0x6,
-                        name="invalidate1_0x6",
+                        name="invalidate1",
                     ),
                     "nop",
                 ),
@@ -457,7 +479,7 @@ class PatchDB:
                     Sig(
                         "41 B8 98 3A 00 00 E8 ? ? ? ?",
                         offset=0x6,
-                        name="invalidate2_0x6",
+                        name="invalidate2",
                     ),
                     "nop",
                 ),
@@ -477,20 +499,19 @@ class Result(NamedTuple):
 def process_file(filepath, force_patch_channel=None):
     sublime = None
     try:
-        sublime = File(filepath)
+        sublime = SublimeText(filepath)
     except (FileNotFoundError, pefile.PEFormatError, IOError) as e:
         logger.error(e)
         return Result(info=e)
 
-    version_sig = "48 8D 05 ? ? ? ? 48 8D 95 ? ? ? ? 48 89 02 48 8D 05 ? ? ? ? 48 89 42 08 48 8D 4D ? E8 ? ? ? ? B9"
-    version = Sig(version_sig, ref="lea", name="version")
-
     try:
-        version = int(sublime.get_string(version))
+        version = int(sublime.get_version())
     except ValueError as e:
         logger.error(e)
-        logger.error("Failed to automatically detect version")
-        return Result(info=e)
+        if not force_patch_channel:
+            return Result(info=e)
+        else:
+            version = None
     else:
         logger.info("Sublime Text version %d detected", version)
 

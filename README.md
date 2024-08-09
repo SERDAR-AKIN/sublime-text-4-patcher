@@ -1,7 +1,7 @@
 # sublime-text-4-patcher
-Python 3 patcher for Sublime Text v4107-4169 Windows x64
+Python 3 patcher for Sublime Text v4107-4180 Windows x64
 
-Credits for most signatures and patching logic goes to https://github.com/leogx9r
+Credits for patching logic goes to https://github.com/leogx9r
 
 - Uses signatures instead of hardcoded offsets
 - Automatic version detection for stable/dev channels
@@ -50,7 +50,7 @@ The script will extract `sublime_text.exe` from each ZIP file into its own folde
 C:\>py sublime_text_4_patcher.py -h
 usage: sublime_text_4_patcher.py [-h] [-t DIRPATH] [-f {stable,dev}] [filepath]
 
-Sublime Text v4107-4164 Windows x64 Patcher by rainbowpigeon
+Sublime Text v4107-4180 Windows x64 Patcher by rainbowpigeon
 
 positional arguments:
   filepath              File path to sublime_text.exe
