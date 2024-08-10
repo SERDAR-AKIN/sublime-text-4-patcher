@@ -56,6 +56,9 @@ class PrettyBytes:
     def __str__(self):
         return "".join("\\x{:02x}".format(b) for b in self.bytes)
 
+    def __format__(self, format_spec):
+        return format(str(self), format_spec)
+
 
 class Sig:
     # TODO: could consider combining consecutive expressions into one
@@ -86,7 +89,7 @@ class Patch:
 
     # TODO: should consider other instruction forms and dynamically assemble
     CALL_LEN = 5  # E8 | xx xx xx xx
-    LEA_LEN = 7  # LEA: 48 8D xx | xx xx xx xx
+    LEA_LEN = 7  # 48 8D xx | xx xx xx xx
 
     patch_types = {
         k: bytes.fromhex(v)
@@ -118,7 +121,7 @@ class Patch:
             self.offset = Finder(self.file, self.sig).find()
         end_offset = self.offset + len(self.new_bytes)
         logger.debug(
-            "Offset {:<8}: {:<18}: patching {} with {}".format(
+            "Offset {:<8}: {:<21}: patching {:<28} with {}".format(
                 hex(self.offset),
                 self.sig.name,
                 PrettyBytes(self.file.data[self.offset : end_offset]),
@@ -259,7 +262,7 @@ class Finder:
     ref_types = {
         r.type: r
         for r in (
-            Ref("call", 5), # E8 | xx xx xx xx
+            Ref("call", 5),  # E8 | xx xx xx xx
             Ref("lea", 7),  # 48 8D xx | xx xx xx xx
             Ref("jmp", 5),  # E9 | xx xx xx xx
         )
