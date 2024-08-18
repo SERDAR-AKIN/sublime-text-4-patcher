@@ -12,6 +12,7 @@ import itertools
 from sys import exit
 from pathlib import Path
 from zipfile import ZipFile
+from collections.abc import Sequence
 from typing import NamedTuple, Union, Optional, List
 
 
@@ -82,6 +83,34 @@ class Sig:
         )
 
 
+class Sigs(Sequence):
+    """
+    Contains multiple signatures as fallback options
+    """
+
+    def __init__(self, name: str, *sigs: Sig):
+        self.sigs = sigs
+        self.name = name
+        if len(self.sigs) == 1:
+            self.sigs[0].name = name
+        else:
+            # variants of original name
+            for i, sig in enumerate(self.sigs):
+                sig.name = f"{name}.{i+1}"
+
+    def __getitem__(self, index: Union[int, slice]):
+        return self.sigs[index]
+
+    def __len__(self):
+        return len(self.sigs)
+
+    def __str__(self):
+        return self.name
+
+    def __format__(self, format_spec):
+        return format(str(self), format_spec)
+
+
 class Patch:
     """
     Replaces bytes
@@ -101,35 +130,66 @@ class Patch:
         }.items()
     }
 
-    def __init__(self, sig: Sig, patch_type: str, file: Optional["File"] = None):
-        self.sig = sig
-        if file:
-            self.file = file
-            self.offset = Finder(self.file, self.sig).find()
+    def __init__(self, patch_type: str, sigs: Union[Sig, Sigs]):
+        # create Sigs for single Sig
+        if isinstance(sigs, Sig):
+            sigs = Sigs(sigs.name, sigs)
+        self.sigs = sigs
 
         if patch_type not in Patch.patch_types:
             raise ValueError(f"Unsupported patch type {patch_type}")
 
         self.patch_type = patch_type
         self.new_bytes = Patch.patch_types[self.patch_type]
+        self.patched = False
 
-    def apply(self, file: Optional["File"] = None):
-        if not hasattr(self, "file"):
-            if not file:
-                raise ValueError("No file provided")
-            self.file = file
-            self.offset = Finder(self.file, self.sig).find()
-        end_offset = self.offset + len(self.new_bytes)
+    def apply(self, file: "File"):
+        print()
+        logger.info("Applying patch %s...", self)
+        for sig in self.sigs:
+            logger.debug("Finding signature %s...", sig)
+            try:
+                self.offset = file.find(sig)
+            except ValueError as e:
+                logger.warning(e)
+                continue
+            else:
+                end_offset = self.offset + len(self.new_bytes)
+                # .data is a memoryview, so we need to make a copy of the old bytes
+                self.old_bytes = file.data[self.offset : end_offset].tobytes()
+                if self.old_bytes == self.new_bytes:
+                    logger.warning("Patch %s has already been applied", self)
+                self.log_patch(self.offset, sig.name, self.old_bytes, self.new_bytes)
+                file.data[self.offset : end_offset] = self.new_bytes
+                self.patched = True
+                return self.offset
+        else:
+            raise ValueError(f"Could not find any signatures for patch {self}")
+
+    def revert(self, file: "File"):
+        logger.info("Reverting patch %s...", self)
+        if not self.patched:
+            raise ValueError(f"Patch {self} has not been applied")
+
+        end_offset = self.offset + len(self.old_bytes)
+        self.log_patch(self.offset, self.sigs, self.new_bytes, self.old_bytes)
+        file.data[self.offset : end_offset] = self.old_bytes
+        self.patched = False
+        return self.offset
+
+    @staticmethod
+    def log_patch(offset, name, old_bytes, new_bytes):
         logger.debug(
             "Offset {:<8}: {:<21}: patching {:<28} with {}".format(
-                hex(self.offset),
-                self.sig.name,
-                PrettyBytes(self.file.data[self.offset : end_offset]),
-                PrettyBytes(self.new_bytes),
+                hex(offset),
+                name,
+                PrettyBytes(old_bytes),
+                PrettyBytes(new_bytes),
             )
         )
-        self.file.data[self.offset : end_offset] = self.new_bytes
-        return self.offset
+
+    def __str__(self):
+        return f'"{self.patch_type} {self.sigs}"'
 
 
 class File:
@@ -153,9 +213,16 @@ class File:
             self.patches: List[Patch] = []
             self.patched_offsets: List[int] = []
 
-    def create_patch(self, patch: Patch):
-        patch.__init__(patch.sig, patch.patch_type, self)
+    def add_patch(self, patch: Patch):
         self.patches.append(patch)
+
+    def add_patches(self, patches: List[Patch]):
+        logger.info("Adding patches...")
+        if not patches:
+            logger.warning("No patches to add")
+            return
+        self.patches.extend(patches)
+        logger.info("Patches added!")
 
     def save(self):
         backup_path = self.path.with_suffix(f"{self.path.suffix}.bak")
@@ -181,17 +248,30 @@ class File:
         else:
             logger.info("Patched file written at %s", self.path)
 
+    def apply_patch(self, patch: Patch):
+        return patch.apply(self)
+
     def apply_all_patches(self):
         logger.info("Applying all patches...")
+        if not self.patches:
+            logger.warning("No patches to apply")
+            return []
         for patch in self.patches:
-            self.patched_offsets.append(patch.apply())
+            self.patched_offsets.append(self.apply_patch(patch))
         logger.info("All patches applied!")
         return self.patched_offsets
 
-    # TODO: could add apply_patch method
+    def revert_patch(self, patch: Patch):
+        return patch.revert(self)
 
-    def get_string(self, sig: Sig):
-        return Finder(self, sig).get_string()
+    def revert_all_patches(self):
+        logger.info("Reverting all patches...")
+        if not self.patches:
+            logger.warning("No patches to revert")
+            return
+        for patch in self.patches:
+            self.revert_patch(patch)
+        logger.info("All patches reverted!")
 
     @staticmethod
     def parse_path(filepath: Union[str, Path]):
@@ -227,22 +307,47 @@ class File:
 
         return pe
 
+    # TODO: subclasses
+    def find(self, pattern: Union[Sig, bytes]):
+        if isinstance(pattern, Sig):
+            return Finder(self).sig_find(pattern)
+        elif isinstance(pattern, bytes):
+            return Finder(self).re_find(pattern)
+
+    def find_string(self, pattern: Union[Sig, bytes]):
+        if isinstance(pattern, Sig):
+            return Finder(self).sig_find_string(pattern)
+        elif isinstance(pattern, bytes):
+            return Finder(self).re_find_string(pattern)
+
     def __str__(self):
         return self.path
 
 
 class SublimeText(File):
+
+    VERSION_PATTERNS = tuple(
+        r % b"(\d{4})"
+        for r in (
+            b"version=%b",
+            b"sublime_text_%b",
+        )
+    )
+
     def __init__(self, filepath: Union[str, Path]):
         super().__init__(filepath)
 
     def get_version(self):
-        it = re.finditer(b"version=(\d{4})", self.data, flags=re.DOTALL)
-        match = next(it, None)
-        if not match:
+        for pattern in self.VERSION_PATTERNS:
+            try:
+                version = self.find_string(pattern)
+            except ValueError as e:
+                logger.warning(e)
+                continue
+            else:
+                return version.decode()
+        else:
             raise ValueError(f"Could not find version string")
-        if next(it, None):
-            raise ValueError(f"Found multiple matches for version string")
-        return match.group(1)
 
 
 class Ref:
@@ -271,46 +376,55 @@ class Finder:
     STR_SAMPLE_LEN = 100
     NULL = b"\x00"
 
-    def __init__(self, file: File, sig: Sig):
+    def __init__(self, file: File):
         self.file = file
-        self.sig = sig
 
-        it = re.finditer(self.sig.pattern, self.file.data, flags=re.DOTALL)
+    def re_find(self, pattern: bytes):
+        it = re.finditer(pattern, self.file.data, flags=re.DOTALL)
         match = next(it, None)
         if not match:
-            raise ValueError(f"Could not find signature {self.sig}")
+            raise ValueError(f"Could not find pattern {pattern!r}")
         if next(it, None):
-            raise ValueError(f"Found multiple matches for signature {self.sig}")
+            raise ValueError(f"Found multiple matches for pattern {pattern!r}")
+        return match
 
-        self.offset = match.start() + self.sig.offset
+    def re_find_string(self, pattern: bytes):
+        return self.re_find(pattern).group(1)
 
-        if self.sig.ref:
-            ref = self.ref_types.get(self.sig.ref)
+    def sig_find(self, sig: Sig):
+        try:
+            match = self.re_find(sig.pattern)
+        except ValueError as e:
+            raise ValueError(f"Could not find signature {sig}") from e
+
+        offset = match.start() + sig.offset
+
+        if sig.ref:
+            ref = self.ref_types.get(sig.ref)
             if not ref:
-                raise ValueError(f"Unsupported ref type {self.sig.ref}")
+                raise ValueError(f"Unsupported reference type {sig.ref}")
 
-            logger.debug("Processing ref for signature %s...", self.sig)
+            logger.debug("Resolving reference for signature %s...", sig)
 
-            matched_bytes = match[0]
+            matched_bytes = match.group(0)
             logger.debug("Found %s: %s", ref.type, PrettyBytes(matched_bytes))
 
-            matched_bytes = matched_bytes[self.sig.offset :]
+            matched_bytes = matched_bytes[sig.offset :]
 
             rel_addr = self.get_addr(ref, matched_bytes)
             logger.debug("Found relative address: %s", hex(rel_addr))
 
             # TODO: handle different sections using off_to_rva + rva_to_off
-            self.offset = self.offset + ref.total_size + rel_addr
+            offset = offset + ref.total_size + rel_addr
+            offset %= 2**32
 
-            self.offset %= 2**32
+            logger.debug("Determined actual offset: %s", hex(offset))
 
-            logger.debug("Determined actual offset: %s", hex(self.offset))
+        return offset
 
-    def find(self):
-        return self.offset
-
-    def get_string(self):
-        sample = self.file.data[self.offset : self.offset + self.STR_SAMPLE_LEN]
+    def sig_find_string(self, sig: Sig):
+        offset = self.sig_find(sig)
+        sample = self.file.data[offset : offset + self.STR_SAMPLE_LEN]
         return sample[: sample.tobytes().find(self.NULL)].tobytes().decode()
 
     # TODO: could use functions from pefile instead
@@ -437,54 +551,67 @@ class PatchDB:
         if self.os == "windows":
             self.DB["windows"]["x64"]["base"] = (
                 Patch(
-                    Sig(
-                        "45 31 ? e8 ? ? ? ? 85 c0 75 ? ? 8d",
-                        ref="call",
-                        offset=0x3,
-                        name="license_check",
-                    ),
                     "ret0",
+                    Sigs(
+                        "license_check",
+                        Sig(
+                            "45 31 ? e8 ? ? ? ? 85 c0 75 ? ? 8d",
+                            ref="call",
+                            offset=0x3,
+                        ),
+                        Sig(
+                            "0f 11 ? ? ? 31 ? 45 31 ? 45 31 ? e8 ? ? ? ?",
+                            ref="call",
+                            offset=0xD,
+                        ),
+                        # Sig(
+                        #     "8d ? ? 48 89 ? ? ? 48 89 ? ? ? 48 89 ? e8 ? ? ? ?",
+                        #     offset=0x10,
+                        #     ref="call",
+                        # ),
+                        Sig("e8 ? ? ? ? ? 8b ? ? ? ? ? 85 c0 0f 94 ? ? 74", ref="call"),
+                    ),
                 ),
                 Patch(
+                    "ret1",
                     Sig(
                         "8b 51 ? 48 83 c1 08 e9 ? ? ? ?",
                         ref="jmp",
                         offset=0x7,
                         name="server_validate",
                     ),
-                    "ret1",
                 ),
                 Patch(
+                    "ret0",
                     Sig(
                         "48 8d ? ? ? ? ? e8 ? ? ? ? 48 89 c1 ff ? ? ? ? ? ? 8b",
                         ref="lea",
                         name="license_notification",
                     ),
-                    "ret0",
                 ),
                 # TODO: investigate switch to crashpad in 4153
                 # Patch(
+                #     "ret",
                 #     Sig(
                 #         "41 57 41 56 41 55 41 54 56 57 55 53 B8 ? ? ? ? E8 ? ? ? ? 48 29 C4 8A 84 24 ? ? ? ?",
                 #         name="crash_reporter",
                 #     ),
-                #     "ret",
                 # ),
                 Patch(
+                    "nop",
                     Sig(
                         "41 B8 88 13 00 00 E8 ? ? ? ?",
                         offset=0x6,
                         name="invalidate1",
                     ),
-                    "nop",
                 ),
                 Patch(
+                    "nop",
                     Sig(
                         "41 B8 98 3A 00 00 E8 ? ? ? ?",
                         offset=0x6,
                         name="invalidate2",
                     ),
-                    "nop",
                 ),
             )
 
@@ -540,14 +667,13 @@ def process_file(filepath, force_patch_channel=None):
             )
             return Result(info=e, version=version)
 
+    sublime.add_patches(patches)
+
     try:
-        for patch in patches:
-            sublime.create_patch(patch)
+        offsets = sublime.apply_all_patches()
     except ValueError as e:
         logger.error(e)
         return Result(info=e, version=version)
-
-    offsets = sublime.apply_all_patches()
 
     try:
         sublime.save()
