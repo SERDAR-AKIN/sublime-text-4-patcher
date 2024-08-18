@@ -179,14 +179,13 @@ class Patch:
     @staticmethod
     def log_patch(offset, name, old_bytes, new_bytes):
         logger.debug(
-            "-> Offset {:<8}: {:<21}: patching {:<28} with {}".format(
+            "Offset {:<8}: {}\n\t - {}\n\t + {}\n".format(
                 hex(offset),
                 name,
                 PrettyBytes(old_bytes),
                 PrettyBytes(new_bytes),
             )
         )
-        print()
 
     def __str__(self):
         return f'"{self.patch_type} {self.sigs}"'
@@ -547,6 +546,30 @@ class PatchDB:
         if self.os == "windows":
             self.DB["windows"]["x64"]["base"] = (
                 Patch(
+                    "nop",
+                    Sig(
+                        "41 B8 88 13 00 00 E8 ? ? ? ?",
+                        offset=0x6,
+                        name="invalidate1",
+                    ),
+                ),
+                Patch(
+                    "nop",
+                    Sig(
+                        "41 B8 98 3A 00 00 E8 ? ? ? ?",
+                        offset=0x6,
+                        name="invalidate2",
+                    ),
+                ),
+                Patch(
+                    "ret0",
+                    Sig(
+                        "48 8d ? ? ? ? ? e8 ? ? ? ? 48 89 c1 ff ? ? ? ? ? ? 8b",
+                        ref="lea",
+                        name="license_notification",
+                    ),
+                ),
+                Patch(
                     "ret0",
                     Sigs(
                         "license_check",
@@ -577,14 +600,6 @@ class PatchDB:
                         name="server_validate",
                     ),
                 ),
-                Patch(
-                    "ret0",
-                    Sig(
-                        "48 8d ? ? ? ? ? e8 ? ? ? ? 48 89 c1 ff ? ? ? ? ? ? 8b",
-                        ref="lea",
-                        name="license_notification",
-                    ),
-                ),
                 # TODO: investigate switch to crashpad in 4153
                 # Patch(
                 #     "ret",
@@ -593,22 +608,6 @@ class PatchDB:
                 #         name="crash_reporter",
                 #     ),
                 # ),
-                Patch(
-                    "nop",
-                    Sig(
-                        "41 B8 88 13 00 00 E8 ? ? ? ?",
-                        offset=0x6,
-                        name="invalidate1",
-                    ),
-                ),
-                Patch(
-                    "nop",
-                    Sig(
-                        "41 B8 98 3A 00 00 E8 ? ? ? ?",
-                        offset=0x6,
-                        name="invalidate2",
-                    ),
-                ),
             )
 
 
