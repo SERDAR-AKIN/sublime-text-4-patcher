@@ -144,7 +144,6 @@ class Patch:
         self.patched = False
 
     def apply(self, file: "File"):
-        print()
         logger.info("Applying patch %s...", self)
         for sig in self.sigs:
             logger.debug("Finding signature %s...", sig)
@@ -180,13 +179,14 @@ class Patch:
     @staticmethod
     def log_patch(offset, name, old_bytes, new_bytes):
         logger.debug(
-            "Offset {:<8}: {:<21}: patching {:<28} with {}".format(
+            "-> Offset {:<8}: {:<21}: patching {:<28} with {}".format(
                 hex(offset),
                 name,
                 PrettyBytes(old_bytes),
                 PrettyBytes(new_bytes),
             )
         )
+        print()
 
     def __str__(self):
         return f'"{self.patch_type} {self.sigs}"'
@@ -222,7 +222,6 @@ class File:
             logger.warning("No patches to add")
             return
         self.patches.extend(patches)
-        logger.info("Patches added!")
 
     def save(self):
         backup_path = self.path.with_suffix(f"{self.path.suffix}.bak")
@@ -404,15 +403,12 @@ class Finder:
             if not ref:
                 raise ValueError(f"Unsupported reference type {sig.ref}")
 
-            logger.debug("Resolving reference for signature %s...", sig)
-
             matched_bytes = match.group(0)
-            logger.debug("Found %s: %s", ref.type, PrettyBytes(matched_bytes))
-
-            matched_bytes = matched_bytes[sig.offset :]
+            matched_bytes = matched_bytes[sig.offset : sig.offset + ref.total_size]
+            logger.debug("Resolving %s: %s", ref.type, PrettyBytes(matched_bytes))
 
             rel_addr = self.get_addr(ref, matched_bytes)
-            logger.debug("Found relative address: %s", hex(rel_addr))
+            logger.debug("Determined relative address: %s", hex(rel_addr))
 
             # TODO: handle different sections using off_to_rva + rva_to_off
             offset = offset + ref.total_size + rel_addr
