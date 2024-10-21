@@ -1,7 +1,7 @@
 # sublime-text-4-patcher
-Python 3 patcher for Sublime Text v4107-4169 Windows x64
+Python 3 patcher for Sublime Text v4107-4180 Windows x64
 
-Credits for most signatures and patching logic goes to https://github.com/leogx9r
+Credits for patching logic goes to https://github.com/leogx9r
 
 - Uses signatures instead of hardcoded offsets
 - Automatic version detection for stable/dev channels
@@ -50,7 +50,7 @@ The script will extract `sublime_text.exe` from each ZIP file into its own folde
 C:\>py sublime_text_4_patcher.py -h
 usage: sublime_text_4_patcher.py [-h] [-t DIRPATH] [-f {stable,dev}] [filepath]
 
-Sublime Text v4107-4164 Windows x64 Patcher by rainbowpigeon
+Sublime Text v4107-4180 Windows x64 Patcher by rainbowpigeon
 
 positional arguments:
   filepath              File path to sublime_text.exe
@@ -67,8 +67,8 @@ Report any issues at github.com/rainbowpigeon/sublime-text-4-patcher/issues!
 
 ## Screenshots
 
-![Script execution in input prompt mode](https://github.com/rainbowpigeon/sublime-text-4-patcher/assets/113040852/a39a5c0b-71b1-4979-8495-2e62876949ae)
+![Script execution in input prompt mode](https://github.com/user-attachments/assets/6ca31604-d704-4662-8788-d75206a11c46)
 
 ### Test Mode Results
 
-![Script results in test mode](https://github.com/rainbowpigeon/sublime-text-4-patcher/assets/113040852/eedb89b5-ecde-427f-8684-9354e0341fed)
+![Script results in test mode](https://github.com/user-attachments/assets/02e6d1e5-50d3-4c3d-b374-1bf6d00bc256)
