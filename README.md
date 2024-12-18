@@ -1,5 +1,5 @@
 # sublime-text-4-patcher
-Python 3 patcher for Sublime Text v4107-4180 Windows x64
+Python 3 patcher for Sublime Text v4107-4186 Windows x64
 
 Credits for patching logic goes to https://github.com/leogx9r
 
@@ -24,9 +24,9 @@ It's just for `pefile` which is indirectly used for version detection.
 
 ## Usage
 
-You only need `sublime_text_4_patcher.py` from this repository (and the aforementioned requirements). 
+You only need `sublime_text_4_patcher.py` from this repository (and the aforementioned requirements).
 
-**IMPORTANT**: Remember to enter any text as the license key after patching! For stable versions, you can accomplish this by going to Help > Enter License. 
+**IMPORTANT**: Remember to enter any text as the license key after patching! For stable versions, you can accomplish this by going to Help > Enter License.
 
 ### Input Prompt Mode
 
@@ -50,7 +50,7 @@ The script will extract `sublime_text.exe` from each ZIP file into its own folde
 C:\>py sublime_text_4_patcher.py -h
 usage: sublime_text_4_patcher.py [-h] [-t DIRPATH] [-f {stable,dev}] [filepath]
 
-Sublime Text v4107-4180 Windows x64 Patcher by rainbowpigeon
+Sublime Text v4107-4186 Windows x64 Patcher by rainbowpigeon
 
 positional arguments:
   filepath              File path to sublime_text.exe
