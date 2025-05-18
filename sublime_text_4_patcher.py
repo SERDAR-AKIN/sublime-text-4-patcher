@@ -325,7 +325,7 @@ class File:
 class SublimeText(File):
 
     VERSION_PATTERNS = tuple(
-        r % b"(\d{4})"
+        r % rb"(\d{4})"
         for r in (
             b"version=%b",
             b"sublime_text_%b",
