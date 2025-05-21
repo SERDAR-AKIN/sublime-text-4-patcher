@@ -509,6 +509,8 @@ class PatchDB:
             4194,
             4195,
             4196,
+            4198,
+            4199,
         ),
         "stable": (
             4107,
@@ -525,6 +527,7 @@ class PatchDB:
             4186,
             4189,
             4192,
+            4200,
         ),
     }
 
@@ -619,12 +622,22 @@ class PatchDB:
                 ),
                 Patch(
                     "ret1",
-                    Sig(
-                        "8b 51 ? 48 83 c1 08 e9 ? ? ? ?",
-                        ref="jmp",
-                        offset=0x7,
-                        name="server_validate",
-                    ),
+                    Sigs(
+                        "server_validate",
+                        Sig(
+                            "8b 51 ? 48 83 c1 08 e9 ? ? ? ?",
+                            ref="jmp",
+                            offset=0x7,
+                        ),
+                        # Sig(
+                        #     "48 8b 49 08 8b 51 20 e9 ? ? ? ?",
+                        #     ref="jmp",
+                        #     offset=0x7,
+                        # ),
+                        Sig(
+                            "56 57 53 48 83 ec ? 89 d6 48 89 cf b9 ? 00 00 00 e8 ? ? ? ?",
+                        ),
+                    )
                 ),
                 # TODO: investigate switch to crashpad in 4153
                 # Patch(
